@@ -1,0 +1,40 @@
+---
+- hosts: nginx
+  tasks: 
+    - name: add docker repo
+      shell: yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+
+    - name: Install EPEL
+      yum:
+        name: epel-release
+        state: present
+    
+    - name: Install Docker Engine
+      yum:
+        name: "{{ item }}"
+        state: present
+      with_items:
+        - yum-utils
+        - lvm2
+        - docker-ce
+        - device-mapper-persistent-data
+        - python-pip
+        - python-firewall
+    
+    - name: install docker-py
+      pip:
+        name: docker-py
+    
+    - name: Start docker engine
+      service:
+       name: docker
+       state: started
+       enabled: yes
+    
+    - name: Run nginx container
+      docker:
+        name: nginx
+        image: nginx
+        state: running
+        net: host
+        restart_policy: no

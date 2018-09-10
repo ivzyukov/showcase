@@ -1,0 +1,72 @@
+---
+- hosts: loadbalancer
+  vars: 
+     - domainname: "{{ hostvars['loadbalancer']['ansible_local']['curl']['domain'] }}"
+     #- nginx_ip: "{{ hostvars['nginx']['ansible_default_ipv4']['address'] }}"
+     #- minion_ip: "{{ hostvars['minion']['ansible_default_ipv4']['address'] }}"
+  tasks:
+    - name: Install nginx
+      yum:
+        name: nginx
+        state: present
+    - name: ensure custom facts directory exist
+      file:
+        path: /etc/ansible/facts.d 
+        recurse: yes
+        state: directory
+    - name: copy curl
+      copy:
+        src: "/etc/ansible/curl.fact" 
+        dest: "/etc/ansible/facts.d/curl.fact" 
+        mode: "u=x"
+    - name: reload ansible_local
+      setup: filter=ansible_local
+    - name: install ssl packages
+      yum:      
+        name: "{{ item }}"
+        state: present
+      with_items:
+        - yum-utils
+    - name: config manager
+      shell: yum-config-manager --enable rhui-REGION-rhel-server-extras rhui-REGION-rhel-server-optional      
+    - name: certbot install
+      yum:      
+        name: "{{ item }}"
+        state: present
+      with_items:
+        - python2-certbot-nginx
+      tags: package
+    - name: create directory for ssl certificate
+      file:
+        path: /etc/nginx/certs/
+        state: directory 
+    - name: install pip
+      yum:      
+        name: python-pip
+        state: present
+    - name: install passlib packages via pip
+      pip: name=passlib
+    - name: generate openssl key and csr
+      shell: openssl req -new -newkey rsa:4096 -nodes -keyout /etc/nginx/certs/$(curl http://169.254.169.254/meta-data/meta-data/public-hostname).key -out /etc/nginx/certs/$(curl http://169.254.169.254/meta-data/meta-data/public-hostname).csr  -subj "/C=RU/ST=Moscow/L=Moscow/O=Dis/CN=$(curl http://169.254.169.254/meta-data/meta-data/public-hostname)"
+    - name: generate openssl cert
+      shell: openssl req -new -newkey rsa:4096 -days 365 -nodes -x509 -subj "/C=RU/ST=Moscow/L=Moscow/O=Dis/CN=$(curl http://169.254.169.254/meta-data/meta-data/public-hostname)" -keyout /etc/nginx/certs/$(curl http://169.254.169.254/meta-data/meta-data/public-hostname).key  -out  /etc/nginx/certs/$(curl http://169.254.169.254/meta-data/meta-data/public-hostname).pem
+    - name: copy template nginx
+      template:
+        src: /etc/ansible/nginx.conf.j2
+        dest: /etc/nginx/nginx.conf
+    - name: Start nginx
+      template:
+        src: /etc/ansible/nginx.conf.j2
+        dest: /etc/nginx/nginx.conf
+    - name: Generate htpasswd file
+      htpasswd:
+        path: /etc/nginx/.htpasswd
+        name: admin
+        password: 8y4Pn3GsVdEcEWSR
+        owner: root
+        mode: 0664
+    - name: Start nginx
+      service:
+        name: nginx
+        enabled : yes
+        state: restarted
